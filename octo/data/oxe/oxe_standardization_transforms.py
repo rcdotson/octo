@@ -15,6 +15,7 @@ step = {
 from typing import Any, Dict
 
 import tensorflow as tf
+import numpy as np
 
 from octo.data.utils.data_utils import (
     binarize_gripper_actions,
@@ -23,6 +24,131 @@ from octo.data.utils.data_utils import (
     relabel_actions,
 )
 
+def curve_hdf_dataset_transform(trajectory: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+
+    proprio = kwargs['kwargs'].get("proprio")
+    action = kwargs['kwargs'].get("action") 
+
+    
+    """depth_source = []
+    for i in trajectory["observation"]["depth_image_raw"]:
+        img = i[:,:,0]
+        img = np.float32(img)/255.0 * 2         #convert back to meters from [0-255]
+        depth_source.append(img)
+    
+    trajectory["observation"]["depth_image_raw"] = tf.concat(depth_source, axis=-1)
+    """
+
+    #trajectory["observation"]["depth_primary_8"] = tf.cast(trajectory["observation"]["depth_primary_8"], dtype=tf.float32)
+    #trajectory["observation"]["depth_wrist_8"] = tf.cast(trajectory["observation"]["depth_wrist_8"], dtype=tf.float32)
+
+    proprio_source = []
+    for source in proprio.split(":"):
+        if source == "joint":
+            proprio_source.append(trajectory["observation"]["joint"])
+        if source == "xyz":
+            proprio_source.append(trajectory["observation"]["xyz"])
+        if source == "velocity":
+            proprio_source.append(trajectory["observation"]["velocity"])
+        if source == "aa":
+            proprio_source.append(trajectory["observation"]["aa"])
+        if source == "euler":
+            proprio_source.append(trajectory["observation"]["euler"])
+        if source == "q":
+            proprio_source.append(trajectory["observation"]["q"])
+        if source == "sixd":
+            proprio_source.append(trajectory["observation"]["sixd"])
+        if source == "gripper":
+            proprio_source.append(trajectory["observation"]["gripper"])
+
+    action_source = []
+    for source in action.split(":"):
+        if source == "joint":
+            action_source.append(trajectory["action_joint"])
+        if source == "xyz":
+            action_source.append(trajectory["action_xyz"])
+        if source == "dxyz":
+            action_source.append(trajectory["action_dxyz"])
+        if source == "aa":
+            action_source.append(trajectory["action_aa"])
+        if source == "euler":
+            action_source.append(trajectory["action_euler"])
+        if source == "deuler":
+            action_source.append(trajectory["action_deuler"])
+        if source == "q":
+            action_source.append(trajectory["action_q"])
+        if source == "6d":
+            action_source.append(trajectory["action_6d"])
+        if source == "gripper":
+            action_source.append(trajectory["action_gripper"])
+        if source == "terminate":
+            action_source.append(trajectory["action_terminate"])
+
+
+    
+    trajectory["action"] = tf.concat(action_source, axis=-1)
+
+    if len(proprio_source) > 0:
+        trajectory["observation"]["proprio"] = tf.concat(proprio_source, axis=-1)
+    
+    return trajectory
+
+
+def curve_dataset_joint_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    # transform proprio to have same size as action outputs.  This appears to be necessary for the default viz callback
+    #extended = []
+    #for i in range(trajectory["observation"]["joint_state"].shape[1]):
+    #    extended.append(np.concatenate(trajectory["observation"]["joint_state"][i], [0.0]))
+    #trajectory["observation"]["proprio"] = np.array(extended) 
+
+    #trajectory["action"] = trajectory["action_pose"]
+    
+    trajectory["action"] = tf.concat(
+        [trajectory["action_joint"] ] #, trajectory["action_pose_aa"], trajectory["action_gripper"], trajectory["action_terminate"]]
+        , axis=-1)
+    
+    """    trajectory["action"] = tf.concat(
+            [trajectory["action_joint"] ] #, trajectory["action_gripper"], trajectory["action_terminate"]]
+            , axis=-1)
+    """
+
+    #trajectory["observation"]["proprio"] = trajectory["observation"]["pose_state"]      #xyz state...with joint action space
+
+
+    """trajectory["action"] = tf.concat(
+        [
+            trajectory["action"][:, :7],
+        ], axis=-1)
+    """
+    #trajectory["action"] = tf.convert_to_tensor(trajectory["action"][:, :7])
+    #trajectory["observation"]["proprio"] = trajectory["observation"]["joint_state"]
+    return trajectory
+
+
+def curve_dataset_dxyz_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    # transform proprio to have same size as action outputs.  This appears to be necessary for the default viz callback
+    #extended = []
+    #for i in range(trajectory["observation"]["joint_state"].shape[1]):
+    #    extended.append(np.concatenate(trajectory["observation"]["joint_state"][i], [0.0]))
+    #trajectory["observation"]["proprio"] = np.array(extended) 
+
+    trajectory["observation"]["proprio"] = trajectory["observation"]["pose_state"]      #xyz state...
+    
+    trajectory["action"] = tf.concat(
+        [trajectory["action_pose_dxyz"] ] #, trajectory["action_pose_aa"], trajectory["action_gripper"], trajectory["action_terminate"]]
+        , axis=-1)
+    
+
+    return trajectory
+
+def curve_dataset_pose_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    trajectory["action"] = tf.concat(
+        [trajectory["action_pose_xyz"]]
+        , axis=-1)
+
+    #trajectory["action"] = tf.convert_to_tensor(trajectory["action"][:, :7])
+    #trajectory["observation"]["proprio"] = trajectory["observation"]["joint_state"]
+    return trajectory
 
 def bridge_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
     # NOTE: this is not actually the official OXE copy of bridge, it is our own more up-to-date copy that you

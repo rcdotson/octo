@@ -24,7 +24,7 @@ import jax
 import numpy as np
 import wandb
 
-sys.path.append("path/to/your/act")
+sys.path.append("/home/aware/code/act")
 
 # keep this to register ALOHA sim env
 from envs.aloha_sim_env import AlohaGymEnv  # noqa
@@ -101,7 +101,10 @@ def main(_):
             images.extend([o["image_primary"][0] for o in info["observations"]])
             episode_return += reward
             if done or trunc:
+                if done:
+                    print("Done signal received from model")
                 break
+            print(f"Current reward: {reward}")
         print(f"Episode return: {episode_return}")
 
         # log rollout video to wandb -- subsample temporally 2x for faster logging

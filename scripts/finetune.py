@@ -1,6 +1,7 @@
 import datetime
 from functools import partial
 import os
+import numpy as np
 
 from absl import app, flags, logging
 import flax
@@ -12,6 +13,9 @@ import optax
 import tensorflow as tf
 import tqdm
 import wandb
+
+from octo.model.components.action_heads import L1ActionHead, DiffusionActionHead, UNetDDPMActionHead
+from octo.model.components.tokenizers import LowdimObsTokenizer
 
 from octo.data.dataset import make_single_dataset
 from octo.model.octo_model import OctoModel
@@ -42,7 +46,7 @@ except ImportError:
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string("name", "experiment", "Experiment name.")
+flags.DEFINE_string("name", "real_arm_push_objects", "Experiment name.")
 flags.DEFINE_bool("debug", False, "Debug config (no wandb logging)")
 
 default_config_file = os.path.join(
@@ -66,8 +70,10 @@ def main(_):
         Pretrained model: {FLAGS.config.pretrained_path}
         Finetuning Dataset: {FLAGS.config.dataset_kwargs.name}
         Data dir: {FLAGS.config.dataset_kwargs.data_dir}
+        Save dir: {FLAGS.config.save_dir}
         Task Modality: {FLAGS.config.modality}
         Finetuning Mode: {FLAGS.config.finetuning_mode}
+        Frozen Keys: {FLAGS.config.optimizer["frozen_keys"]}
 
         # Devices: {jax.device_count()}
         Batch size: {FLAGS.config.batch_size} ({FLAGS.config.batch_size // len(devices) } per device)
@@ -127,7 +133,7 @@ def main(_):
     #########
 
     pretrained_model = OctoModel.load_pretrained(
-        FLAGS.config.pretrained_path,
+        "hf://rail-berkeley/octo-small-1.5",
         step=FLAGS.config.pretrained_step,
     )
     flat_config = flax.traverse_util.flatten_dict(
@@ -145,6 +151,49 @@ def main(_):
     config = config.to_dict()
     check_config_diff(config, pretrained_model.config)
 
+    #set up new action head
+    
+   
+    config["model"]["observation_tokenizers"]["proprio"] = ModuleSpec.create(
+        LowdimObsTokenizer,
+        n_bins=256,
+        bin_type="normal",
+        low=-2.0,
+        high=2.0,
+        obs_keys=["proprio"],
+        )
+    
+
+    config["model"]["heads"]["action"] = ModuleSpec.create(
+            L1ActionHead,
+            action_horizon=4,
+            action_dim=8,
+            readout_key="readout_action",
+        )
+
+
+    """config["model"]["heads"]["action"] = ModuleSpec.create(
+        UNetDDPMActionHead,
+        action_horizon=16,
+        action_dim=8,
+        max_action=5.0,
+        use_map=True,
+        flatten_tokens=False,
+        #loss_type = "l1",
+        readout_key="readout_action",
+    )"""
+
+    """    config["model"]["heads"]["action"] = ModuleSpec.create(
+        DiffusionActionHead,
+        action_horizon=16,
+        action_dim=8,
+        use_map=True,
+        loss_type = "l1",
+        readout_key="readout_action",
+    )
+    """    
+
+        
     #########
     #
     # Setup Data Loader
@@ -154,6 +203,8 @@ def main(_):
     # create text processor
     if config["text_processor"] is None:
         text_processor = None
+        print("WARNING:  NO TEXT PROCESSOR")
+        
     else:
         text_processor = ModuleSpec.instantiate(config["text_processor"])()
 
@@ -321,6 +372,8 @@ def main(_):
     else:
         modes_to_evaluate = ["base"]
 
+
+    modes_to_evaluate = ["text_conditioned"]
     dataset_kwargs_list = [FLAGS.config.dataset_kwargs]
 
     val_callback = ValidationCallback(
@@ -375,7 +428,8 @@ def main(_):
 
         with timer("dataset"):
             batch = next(train_data_iter)
-
+            #print("Depth Average...", np.average(batch["observation"]["depth_primary"][0]))
+            #print("Image Average...", np.average(batch["observation"]["image_primary"][0]))
         with timer("train"):
             train_state, update_info = train_step(train_state, batch)
 
@@ -395,6 +449,7 @@ def main(_):
                 wandb_log(val_metrics, step=i)
 
             with timer("visualize"):
+                #Removed for UNET compatbility
                 viz_metrics = viz_callback(train_state, i + 1)
                 wandb_log(viz_metrics, step=i)
 
